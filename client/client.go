@@ -70,6 +70,7 @@ type ZouPPP struct {
 	cfg               *Config
 	pppoeProto        *pppoe.PPPoE
 	pppProto          *lcp.PPP
+	chapProto         *chap.CHAP
 	fastpath          *datapath.TUNIF
 	createFastPathMux *sync.Mutex
 	lcpProto          *lcp.LCP
@@ -189,6 +190,7 @@ func (zou *ZouPPP) Dial(ctx context.Context) {
 		return
 	}
 	zou.lcpProto = lcp.NewLCP(childctx, lcp.ProtoLCP, zou.pppProto, zou.lcpEvtHandler, lcp.WithPeerOptionRule(defPeerRule))
+	zou.chapProto = chap.NewCHAP(zou.cfg.UserName, zou.cfg.Password, zou.pppProto)
 	err = zou.lcpProto.Open(childctx)
 	if err != nil {
 		zou.logger.Error(err.Error())
@@ -288,8 +290,7 @@ func (zou *ZouPPP) lcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) 
 		authProto := zou.lcpProto.PeerRule.GetOptions().Get(uint8(lcp.OpTypeAuthenticationProtocol))[0].(*lcp.LCPOpAuthProto).Proto
 		switch authProto {
 		case lcp.ProtoCHAP:
-			chapProto := chap.NewCHAP(zou.cfg.UserName, zou.cfg.Password, zou.pppProto)
-			err := chapProto.AUTHSelf()
+			err := zou.chapProto.AUTHSelf()
 			if err != nil {
 				zou.logger.Sugar().Errorf("auth failed,%v", err)
 				return
