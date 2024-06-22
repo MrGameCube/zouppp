@@ -11,16 +11,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hujun-open/zouppp/chap"
-	"github.com/hujun-open/zouppp/datapath"
-	"github.com/hujun-open/zouppp/lcp"
-	"github.com/hujun-open/zouppp/pap"
-	"github.com/hujun-open/zouppp/pppoe"
-	"github.com/insomniacslk/dhcp/dhcpv6"
-
 	"github.com/hujun-open/etherconn"
 	"github.com/hujun-open/myaddr"
 	"github.com/hujun-open/mywg"
+	"github.com/hujun-open/zouppp/chap"
+	"github.com/hujun-open/zouppp/datapath"
+	"github.com/hujun-open/zouppp/lcp"
+	"github.com/hujun-open/zouppp/pppoe"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -109,15 +106,6 @@ func NewZouPPP(econn *etherconn.EtherConn, cfg *Config,
 		return nil, err
 	}
 	zou.ncpWG = mywg.NewMyWG()
-	// if zou.cfg.setup.IPv4 {
-	// 	zou.ncpWG.Add(1)
-	// }
-	// if zou.cfg.setup.IPv6 {
-	// 	zou.ncpWG.Add(1)
-	// }
-	// if zou.cfg.setup.DHCPv6IANA || zou.cfg.setup.DHCPv6IAPD {
-	// 	zou.ncpWG.Add(1)
-	// }
 	zou.onceSendResult = new(sync.Once)
 	zou.result = new(DialResult)
 	zou.result.R = ResultFailure
@@ -249,28 +237,6 @@ func (zou *ZouPPP) reportDialResult() {
 	})
 
 }
-
-func (zou *ZouPPP) waitForDialDone(ctx context.Context) {
-
-	select {
-	case <-ctx.Done(): //cancelled
-		zou.ncpWG.Cancel()
-		zou.ncpWG.Wait()
-		atomic.StoreUint32(zou.state, StateClosed)
-	case <-zou.ncpWG.FinishChan: //NCP dial finished
-		addWG(zou.sessionWG, 1)
-		zou.dialSucceed = true
-		atomic.StoreUint32(zou.state, StateOpen)
-	}
-	if zou.cfg.setup.Apply {
-		err := zou.createDatapath(ctx)
-		if err != nil {
-			zou.logger.Error(err.Error())
-		}
-	}
-	zou.reportDialResult()
-}
-
 func (zou *ZouPPP) lcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) {
 	zou.logger.Sugar().Infof("LCP layer %v", evt)
 	needTOTerminate := true
@@ -296,168 +262,22 @@ func (zou *ZouPPP) lcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) 
 				return
 			}
 			zou.logger.Info("auth succeed")
-		case lcp.ProtoPAP:
-			papProto := pap.NewPAP(zou.cfg.UserName, zou.cfg.Password, zou.pppProto)
-			err := papProto.AuthSelf()
-			if err != nil {
-				zou.logger.Sugar().Errorf("auth failed,%v", err)
-				return
-			}
-			zou.logger.Info("auth succeed")
 		default:
 			zou.logger.Sugar().Errorf("unkown auth method negoatied %v", authProto)
 			return
 
 		}
-		launchWaitRoutine := false
-		if zou.cfg.setup.IPv4 {
-			zou.ipcpProto = lcp.NewLCP(ctx, lcp.ProtoIPCP, zou.pppProto, zou.ipcpEvtHandler,
-				lcp.WithOwnOptionRule(lcp.NewDefaultIPCPOwnRule()),
-				lcp.WithPeerOptionRule(&lcp.DefaultIPCPPeerRule{}),
-			)
-			err := zou.ipcpProto.Open(ctx)
-			if err != nil {
-				return
-			}
-			zou.ncpWG.Add(1)
-			go zou.waitForDialDone(ctx)
-			launchWaitRoutine = true
-			zou.ipcpProto.Up(ctx)
-		}
-		if zou.cfg.setup.IPv6 {
-			ipcp6rule := lcp.NewDefaultIP6CPRule(ctx, zou.pppoeProto.LocalAddr().(*pppoe.Endpoint).L2EP.HwAddr)
-			zou.ipv6cpProto = lcp.NewLCP(ctx, lcp.ProtoIPv6CP, zou.pppProto, zou.ipcp6EvtHandler,
-				lcp.WithOwnOptionRule(ipcp6rule),
-				lcp.WithPeerOptionRule(ipcp6rule),
-			)
-			err := zou.ipv6cpProto.Open(ctx)
-			if err != nil {
-				return
-			}
-			zou.ncpWG.Add(1)
-			if !launchWaitRoutine {
-				go zou.waitForDialDone(ctx)
-			}
-			zou.ipv6cpProto.Up(ctx)
-		}
+
+		addWG(zou.sessionWG, 1)
+		zou.dialSucceed = true
+		atomic.StoreUint32(zou.state, StateOpen)
+
+		zou.reportDialResult()
 	case lcp.LCPLayerNotifyDown, lcp.LCPLayerNotifyFinished:
 		return
 	default:
 	}
 	needTOTerminate = false
-}
-
-func (zou *ZouPPP) createDatapath(ctx context.Context) error {
-
-	zou.createFastPathMux.Lock()
-	defer zou.createFastPathMux.Unlock()
-	if zou.fastpath != nil {
-		return nil
-	}
-	zou.logger.Info("creating datapath")
-	var err error
-	mruop := zou.lcpProto.PeerRule.GetOptions().GetFirst((uint8(lcp.OpTypeMaximumReceiveUnit)))
-	var mru uint16 = 1498
-	if mruop != nil {
-		mru = uint16(*(mruop.(*lcp.LCPOpMRU)))
-	}
-
-	var v6ifid []byte
-	if zou.ipv6cpProto != nil {
-		if ifidop := zou.ipv6cpProto.OwnRule.GetOption(uint8(lcp.IP6CPOpInterfaceIdentifier)); ifidop != nil {
-			ifid := [8]byte(*ifidop.(*lcp.InterfaceIDOption))
-			v6ifid = ifid[:]
-		}
-	}
-
-	zou.fastpath, err = datapath.NewTUNIf(ctx, zou.pppProto, zou.cfg.PPPIfName,
-		append(zou.assignedIANAs, zou.assignedV4Addr),
-		v6ifid,
-		mru,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create datapath, %w", err)
-	}
-	return nil
-
-}
-
-// GetV6LLA returns the IPv6 LLA the compsoed of negotiated interface-id via IPv6CP
-func (zou *ZouPPP) GetV6LLA() (net.IP, error) {
-	if zou.ipv6cpProto != nil {
-		if ifidop := zou.ipv6cpProto.OwnRule.GetOption(uint8(lcp.IP6CPOpInterfaceIdentifier)); ifidop != nil {
-			ifid := [8]byte(*ifidop.(*lcp.InterfaceIDOption))
-			lla := make([]byte, 16)
-			copy(lla[:8], lcp.IPv6LinkLocalPrefix[:8])
-			copy(lla[8:16], ifid[:])
-			return lla, nil
-		}
-	}
-	return nil, fmt.Errorf("ipv6cp is not up")
-}
-
-func (zou *ZouPPP) ipcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) {
-	zou.logger.Sugar().Infof("IPCP layer %v", evt)
-	switch evt {
-	case lcp.LCPLayerNotifyUp:
-		defer zou.ncpWG.Done()
-		if v4addrop := zou.ipcpProto.OwnRule.GetOption(uint8(lcp.OpIPAddress)); v4addrop != nil {
-			zou.assignedV4Addr = v4addrop.(*lcp.IPv4AddrOption).Addr
-		}
-	case lcp.LCPLayerNotifyDown, lcp.LCPLayerNotifyFinished:
-		zou.cancelMe()
-		return
-	}
-}
-func (zou *ZouPPP) dialDHCPv6(ctx context.Context) {
-	defer zou.ncpWG.Done()
-	if zou.cfg.setup.DHCPv6IANA || zou.cfg.setup.DHCPv6IAPD {
-		zou.logger.Sugar().Infof("dialing DHCPv6 IANA %v IAPD %v", zou.cfg.setup.DHCPv6IANA, zou.cfg.setup.DHCPv6IAPD)
-		childctx, cancel := context.WithCancel(ctx)
-		econn := lcp.NewPPPConn(childctx, zou.pppProto, lcp.ProtoIPv6)
-		defer econn.Close()
-		defer cancel()
-		lla, _ := zou.GetV6LLA()
-		rudpconn, err := etherconn.NewSharingRUDPConn(fmt.Sprintf("[%v]:%v",
-			lla, dhcpv6.DefaultClientPort), econn,
-			[]etherconn.RUDPConnOption{etherconn.WithAcceptAny(true)})
-		if err != nil {
-			zou.logger.Sugar().Errorf("failed to create SharingRUDPConn %v", err)
-			return
-		}
-		clnt, err := NewDHCP6Clnt(rudpconn, &DHCP6Cfg{
-			Mac:    zou.cfg.Mac,
-			Debug:  zou.cfg.setup.LogLevel == LogLvlDebug,
-			NeedPD: zou.cfg.setup.DHCPv6IAPD,
-			NeedNA: zou.cfg.setup.DHCPv6IANA,
-		}, lla)
-		if err != nil {
-			zou.logger.Sugar().Errorf("failed to create DHCPv6 client, %v", err)
-			return
-		}
-		err = clnt.Dial()
-		if err != nil {
-			zou.logger.Error(err.Error())
-			return
-		}
-		zou.assignedIANAs = clnt.assignedIANAs
-		zou.assignedIAPDs = clnt.assignedIAPDs
-
-	}
-
-}
-func (zou *ZouPPP) ipcp6EvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) {
-	zou.logger.Sugar().Infof("IPv6CP layer %v", evt)
-	switch evt {
-	case lcp.LCPLayerNotifyUp:
-		defer zou.ncpWG.Done()
-		zou.ncpWG.Add(1)
-		go zou.dialDHCPv6(ctx)
-
-	case lcp.LCPLayerNotifyDown, lcp.LCPLayerNotifyFinished:
-		zou.cancelMe()
-		return
-	}
 }
 
 // Result is the ZouPPP dial result

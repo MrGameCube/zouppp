@@ -20,15 +20,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
+	"os/signal"
 	"runtime"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/hujun-open/etherconn"
@@ -112,13 +111,6 @@ func main() {
 		// sleep for dialing interval
 		time.Sleep(setup.Interval)
 	}
-	// wait for all sessions dialing finish
-	dialwg.Wait()
-	setup.Logger().Sugar().Info("all sessions dialing finished")
-	// get the dailing result summary
-	summary := <-summaryCh
-	fmt.Println(summary)
-	setup.Close()
 	// handle ctrl+c
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -129,6 +121,14 @@ func main() {
 			z.Close()
 		}
 	}()
+	// wait for all sessions dialing finish
+	dialwg.Wait()
+	setup.Logger().Sugar().Info("all sessions dialing finished")
+	// get the dailing result summary
+	summary := <-summaryCh
+	fmt.Println(summary)
+	setup.Close()
+
 	// wait for all opened sessions to close
 	if summary.Success > 0 {
 		sessionwg.Wait()
