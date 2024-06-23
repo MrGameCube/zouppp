@@ -16,6 +16,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var sessionSet *Set[uint16] = NewSet()
+
 // PPPoE is the PPPoE protocol
 type PPPoE struct {
 	serviceName string
@@ -125,7 +127,9 @@ func (pppoe *PPPoE) LocalAddr() net.Addr {
 
 // Close implements net.PacketConn interface
 func (pppoe *PPPoE) Close() error {
-	if atomic.LoadUint32(pppoe.state) == pppoeStateOpen {
+
+	if atomic.LoadUint32(pppoe.state) != pppoeStateClosed {
+		pppoe.logger.Sugar().Infof("Closing PPPoE state is %d", pppoe.state)
 		pkt := pppoe.buildPADT()
 		pktbytes, err := pkt.Serialize()
 		if err != nil {
@@ -239,8 +243,12 @@ func (pppoe *PPPoE) getResponse(req *Pkt, code Code, dst net.HardwareAddr) (*Pkt
 	if err != nil {
 		return nil, nil, err
 	}
-	for i := 0; i < pppoe.retry; i++ {
-		_, err = pppoe.conn.WritePktTo(pktbytes, EtherTypePPPoEDiscovery, dst)
+	wasTimeout := false
+	for i := 0; i < pppoe.retry; {
+		if wasTimeout || i == 0 {
+			_, err = pppoe.conn.WritePktTo(pktbytes, EtherTypePPPoEDiscovery, dst)
+			i++
+		}
 		if err != nil {
 			return nil, nil, err
 		}
@@ -250,15 +258,23 @@ func (pppoe *PPPoE) getResponse(req *Pkt, code Code, dst net.HardwareAddr) (*Pkt
 		pppoe.conn.SetReadDeadline(time.Now().Add(pppoe.timeout))
 		rcvpktbuf, l2ep, err := pppoe.conn.ReadPkt()
 		if err != nil {
+			wasTimeout = errors.Is(err, etherconn.ErrTimeOut)
 			if !errors.Is(err, etherconn.ErrTimeOut) {
 				return nil, nil, fmt.Errorf("failed to recv response, %w", err)
 			} //else timeout
 		}
 		err = resp.Parse(rcvpktbuf)
+		pppoe.logger.Sugar().Infof("recieved %v wanted", resp.Code, code)
 		if err != nil {
 			continue
 		}
 		if resp.Code == code {
+			if code == CodePADS && resp.SessionID != 0 {
+				if sessionSet.Has(resp.SessionID) {
+					continue
+				}
+				sessionSet.Add(resp.SessionID)
+			}
 			return resp, l2ep.HwAddr, nil
 		}
 	}
@@ -328,4 +344,68 @@ func newPPPoEEndpoint(l2ep *etherconn.L2Endpoint, sid uint16) *Endpoint {
 		L2EP:      l2ep,
 		SessionID: sid,
 	}
+}
+
+type Set[V comparable] struct {
+	m map[V]bool
+	sync.RWMutex
+}
+
+func NewSet() *Set[uint16] {
+	return &Set[uint16]{
+		m: make(map[uint16]bool),
+	}
+}
+
+// Add add
+func (s *Set[V]) Add(item V) {
+	s.Lock()
+	defer s.Unlock()
+	s.m[item] = true
+}
+
+// Remove deletes the specified item from the map
+func (s *Set[V]) Remove(item V) {
+	s.Lock()
+	defer s.Unlock()
+	delete(s.m, item)
+}
+
+// Has looks for the existence of an item
+func (s *Set[V]) Has(item V) bool {
+	s.RLock()
+	defer s.RUnlock()
+	_, ok := s.m[item]
+	return ok
+}
+
+// Len returns the number of items in a set.
+func (s *Set[V]) Len() int {
+	return len(s.List())
+}
+
+// Clear removes all items from the set
+func (s *Set[V]) Clear() {
+	s.Lock()
+	defer s.Unlock()
+	s.m = make(map[V]bool)
+}
+
+// IsEmpty checks for emptiness
+func (s *Set[V]) IsEmpty() bool {
+	if s.Len() == 0 {
+		return true
+	}
+	return false
+}
+
+// Set returns a slice of all items
+func (s *Set[V]) List() []V {
+	s.RLock()
+	defer s.RUnlock()
+	list := make([]V, 0)
+	for item := range s.m {
+		list = append(list, item)
+	}
+	return list
 }
