@@ -1,4 +1,4 @@
-//Package lcp implements PPP, LCP, IPCP and IPv6CP
+// Package lcp implements PPP, LCP, IPCP and IPv6CP
 package lcp
 
 import (
@@ -49,7 +49,7 @@ const (
 	// DefaultKeepAliveInterval is the default LCP keepalive interval to send
 	DefaultKeepAliveInterval = 5 * time.Second
 	// DefaultMRU is the default LCP MRU value
-	DefaultMRU = 1500
+	DefaultMRU = 1492
 	// DefaultAuthProto is the default auth protocol
 	DefaultAuthProto = ProtoCHAP
 	// DefaultMagicNum is the default LCP magic number
@@ -698,7 +698,7 @@ func (lcp *LCP) rca(ctx context.Context, req *Pkt) (err error) {
 	return
 }
 
-//RCN event
+// RCN event
 func (lcp *LCP) rcn(ctx context.Context, req *Pkt) error {
 	switch req.Code {
 	case CodeConfigureNak:
@@ -743,7 +743,7 @@ func (lcp *LCP) rcn(ctx context.Context, req *Pkt) error {
 	return nil
 }
 
-//PTR event
+// PTR event
 func (lcp *LCP) rtr(ctx context.Context, req *Pkt) (err error) {
 	switch lcp.getState() {
 	case StateClosed, StateStopped, StateClosing, StateStopping:
