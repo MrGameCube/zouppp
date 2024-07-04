@@ -19,6 +19,7 @@ package main
 
 import (
 	"context"
+	"github.com/schollz/progressbar/v3"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -88,7 +89,7 @@ func main() {
 	}
 	// create a ResultSummary channel to get a ResultSummary upon dial finishes
 	summaryCh := make(chan *client.ResultSummary)
-	go client.CollectResults(setup, summaryCh)
+	go client.CollectResults(setup, summaryCh, progressbar.Default(int64(len(cfglist))))
 	// creates dialwg to get dialing results
 	dialwg := new(sync.WaitGroup)
 	dialwg.Add(len(cfglist))

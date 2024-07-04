@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/insomniacslk/dhcp/dhcpv6"
+	"github.com/schollz/progressbar/v3"
 	"math/big"
 	"net"
 	"strings"
@@ -87,6 +88,7 @@ type ZouPPP struct {
 	assignedV4Addr    net.IP
 	assignedIANAs     []net.IP
 	assignedIAPDs     []*net.IPNet
+	conn              *etherconn.EtherConn
 }
 
 // NewZouPPP creates a new ZouPPP instance, dialwg is done when dial finishes,
@@ -113,6 +115,7 @@ func NewZouPPP(econn *etherconn.EtherConn, cfg *Config,
 	zou.result.PPPoEEP = zou.pppoeProto.LocalAddr().(*pppoe.Endpoint)
 	zou.createFastPathMux = new(sync.Mutex)
 	zou.state = new(uint32)
+	zou.conn = econn
 	atomic.StoreUint32(zou.state, StateInitial)
 	for _, option := range options {
 		option(zou)
@@ -173,6 +176,7 @@ func (zou *ZouPPP) Dial(ctx context.Context) {
 	}
 	zou.logger.Info("pppoe open")
 	zou.pppProto = lcp.NewPPP(childctx, zou.pppoeProto, zou.pppoeProto.GetLogger())
+
 	defPeerRule, err := lcp.NewDefaultPeerOptionRule(zou.cfg.setup.AuthProto)
 	if err != nil {
 		zou.logger.Error(err.Error())
@@ -713,7 +717,7 @@ func (rs ResultSummary) String() string {
 const maxDuration = time.Duration(int64(^uint64(0) >> 1))
 
 // CollectResults use setup.ResultCh to collect dialup results, and generate a ResultSummary in the end, send it via resultch
-func CollectResults(setup *Setup, resultch chan *ResultSummary) {
+func CollectResults(setup *Setup, resultch chan *ResultSummary, progressBar *progressbar.ProgressBar) {
 	summary := new(ResultSummary)
 	summary.setup = setup
 	totalSuccessTime := time.Duration(0)
@@ -725,6 +729,7 @@ L1:
 	for {
 		select {
 		case <-setup.stopResultCh:
+			summary.TotalTime = time.Now().Sub(beginTime)
 			break L1
 		case r := <-setup.resultCh:
 			completeTime := r.DialFinishTime.Sub(r.StartTime)
@@ -756,7 +761,9 @@ L1:
 				}
 			}
 			summary.Total++
+			progressBar.Add(1)
 			if summary.Total == setup.NumOfClients {
+				summary.TotalTime = time.Now().Sub(beginTime)
 				break L1
 			}
 

@@ -19,14 +19,21 @@ require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/hujun-open/extyaml v0.4.0 // indirect
 	github.com/hujun-open/myflags v0.3.2 // indirect
+	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/safchain/ethtool v0.2.0 // indirect
+	github.com/schollz/progressbar/v3 v3.14.4 // indirect
 	github.com/u-root/uio v0.0.0-20220204230159-dac05f7d2cb4 // indirect
 	github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/term v0.21.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/hujun-open/etherconn v0.6.1 => ../etherconn
+replace (
+github.com/hujun-open/etherconn v0.6.1 => ../etherconn
+golang.org/x/sys v0.22.0 => golang.org/x/sys v0.13.0
+)
