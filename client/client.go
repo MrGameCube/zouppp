@@ -461,7 +461,8 @@ type Setup struct {
 	// enable profiling for dev
 	Profiling bool `usage:"enable profiling, dev use only"`
 	// use XDP to forward packet
-	XDP bool `usage:"use XDP to forward packet"`
+	XDP       bool `usage:"use XDP to forward packet"`
+	BatchSize uint `usage:"Determines how many clients to dial at once"`
 }
 
 func (zou *ZouPPP) ipcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) {
@@ -512,6 +513,7 @@ func DefaultSetup() *Setup {
 	r.PPPIfName = DefaultPPPIfNameTemplate
 	r.IPv4 = true
 	r.IPv6 = false
+	r.BatchSize = 100
 	return r
 }
 

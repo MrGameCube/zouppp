@@ -96,6 +96,9 @@ func main() {
 	sessionwg := new(sync.WaitGroup)
 	// start dialing
 	var clntList []*client.ZouPPP
+
+	guard := make(chan struct{}, setup.BatchSize)
+
 	for _, cfg := range cfglist {
 		econn := etherconn.NewEtherConn(cfg.Mac, relay,
 			etherconn.WithEtherTypes([]uint16{pppoe.EtherTypePPPoEDiscovery, pppoe.EtherTypePPPoESession}),
@@ -105,7 +108,11 @@ func main() {
 			setup.Logger().Sugar().Errorf("failed to create zouppp,%v", err)
 			return
 		}
-		go z.Dial(ctx)
+		guard <- struct{}{} // would block if guard channel is already filled
+		go func() {
+			z.Dial(ctx)
+			<-guard
+		}()
 		clntList = append(clntList, z)
 		// sleep for dialing interval
 		time.Sleep(setup.Interval)
