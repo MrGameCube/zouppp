@@ -161,10 +161,10 @@ func (own *DefaultIPCPOwnRule) HandlerConfNAK(rcvd Options) {
 func NewDefaultIPCPOwnRule() *DefaultIPCPOwnRule {
 	r := new(DefaultIPCPOwnRule)
 	r.Addr = net.ParseIP("0.0.0.0")
-	r.DNS = net.ParseIP("0.0.0.0")
-	r.SecondaryDNS = net.ParseIP("0.0.0.0")
-	r.NBNS = net.ParseIP("0.0.0.0")
-	r.SecondaryNBNS = net.ParseIP("0.0.0.0")
+	//r.DNS = net.ParseIP("0.0.0.0")
+	//r.SecondaryDNS = net.ParseIP("0.0.0.0")
+	//r.NBNS = net.ParseIP("0.0.0.0")
+	//r.SecondaryNBNS = net.ParseIP("0.0.0.0")
 	r.mux = new(sync.RWMutex)
 	return r
 }

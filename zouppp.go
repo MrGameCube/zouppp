@@ -19,7 +19,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -116,7 +115,7 @@ func main() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		fmt.Println("stopping...")
+		setup.Logger().Sugar().Error("stopping...")
 		for _, z := range clntList {
 			z.Close()
 		}
@@ -126,13 +125,13 @@ func main() {
 	setup.Logger().Sugar().Info("all sessions dialing finished")
 	// get the dailing result summary
 	summary := <-summaryCh
-	fmt.Println(summary)
+	setup.Logger().Sugar().Error("%v", summary)
 	setup.Close()
 
 	// wait for all opened sessions to close
 	if summary.Success > 0 {
 		sessionwg.Wait()
 	}
-	fmt.Println("done")
+	setup.Logger().Sugar().Error("done")
 
 }

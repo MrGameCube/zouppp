@@ -21,7 +21,7 @@ var sessionSet *Set[uint16] = NewSet()
 // PPPoE is the PPPoE protocol
 type PPPoE struct {
 	serviceName string
-	sessionID   uint16
+	SessionID   uint16
 	tags        []Tag
 	acMAC       net.HardwareAddr
 	conn        *etherconn.EtherConn
@@ -122,7 +122,7 @@ func (pppoe *PPPoE) SetDeadline(t time.Time) error {
 
 // LocalAddr return local Endpoint, see doc of Endpoint
 func (pppoe *PPPoE) LocalAddr() net.Addr {
-	return newPPPoEEndpoint(pppoe.conn.LocalAddr(), pppoe.sessionID)
+	return newPPPoEEndpoint(pppoe.conn.LocalAddr(), pppoe.SessionID)
 }
 
 // Close implements net.PacketConn interface
@@ -143,7 +143,7 @@ func (pppoe *PPPoE) Close() error {
 func (pppoe *PPPoE) buildPADT() *Pkt {
 	return &Pkt{
 		Code:      CodePADT,
-		SessionID: pppoe.sessionID,
+		SessionID: pppoe.SessionID,
 	}
 }
 
@@ -180,7 +180,7 @@ func (pppoe *PPPoE) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		return 0, fmt.Errorf("pppoe is not open")
 	}
 	pkt := new(Pkt)
-	pkt.SessionID = pppoe.sessionID
+	pkt.SessionID = pppoe.SessionID
 	pkt.Code = CodeSession
 	pkt.Payload = p
 	pktbytes, err := pkt.Serialize()
@@ -219,7 +219,7 @@ func (pppoe *PPPoE) ReadFrom(buf []byte) (int, net.Addr, error) {
 			continue
 		}
 		//TODO: change ehtherconn so that L2Endpoint become a interface, and so that pppoe sessionid could be included
-		if binary.BigEndian.Uint16(buf[2:4]) != pppoe.sessionID {
+		if binary.BigEndian.Uint16(buf[2:4]) != pppoe.SessionID {
 			continue
 		}
 		buf = append(buf[:0], buf[6:]...)
@@ -234,7 +234,7 @@ func (pppoe *PPPoE) newRemotePPPoEP(mac net.HardwareAddr) *Endpoint {
 		HwAddr: mac,
 		VLANs:  pppoe.conn.LocalAddr().VLANs,
 	}
-	return newPPPoEEndpoint(&l2ep, pppoe.sessionID)
+	return newPPPoEEndpoint(&l2ep, pppoe.SessionID)
 }
 
 // getResponse return 1st rcvd PPPoE response as specified by code, along with remote mac
@@ -314,9 +314,9 @@ func (pppoe *PPPoE) Dial(ctx context.Context) error {
 	if pads.SessionID == 0 {
 		return fmt.Errorf("AC rejected,\n %v", pads.String())
 	}
-	pppoe.sessionID = pads.SessionID
+	pppoe.SessionID = pads.SessionID
 	atomic.StoreUint32(pppoe.state, pppoeStateOpen)
-	pppoe.logger = pppoe.logger.Named(fmt.Sprintf("%X", pppoe.sessionID))
+	pppoe.logger = pppoe.logger.Named(fmt.Sprintf("%X", pppoe.SessionID))
 	_, pppoe.cancelFunc = context.WithCancel(ctx)
 	return nil
 }

@@ -471,6 +471,7 @@ func (zou *ZouPPP) ipcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent)
 		defer zou.ncpWG.Done()
 		if v4addrop := zou.ipcpProto.OwnRule.GetOption(uint8(lcp.OpIPAddress)); v4addrop != nil {
 			zou.assignedV4Addr = v4addrop.(*lcp.IPv4AddrOption).Addr
+			fmt.Printf("%d %s\n", zou.pppoeProto.SessionID, zou.assignedV4Addr)
 		}
 	case lcp.LCPLayerNotifyDown, lcp.LCPLayerNotifyFinished:
 		zou.cancelMe()
@@ -575,7 +576,7 @@ func NewDefaultZouPPPLogger(logl LoggingLvl) (*zap.Logger, error) {
 	cfg := &zap.Config{
 		Encoding:    "console",
 		Level:       zap.NewAtomicLevelAt(logLvlToZapLvl(logl)),
-		OutputPaths: []string{"stdout"},
+		OutputPaths: []string{"stderr"},
 		EncoderConfig: zapcore.EncoderConfig{
 			MessageKey:       "message",
 			LevelKey:         "level",
