@@ -67,7 +67,7 @@ func stateStr(s uint32) string {
 // ZouPPP represents a single PPPoE/PPP client session
 type ZouPPP struct {
 	cfg               *Config
-	pppoeProto        *pppoe.PPPoE
+	PPPoeProto        *pppoe.PPPoE
 	pppProto          *lcp.PPP
 	chapProto         *chap.CHAP
 	fastpath          *datapath.TUNIF
@@ -85,10 +85,10 @@ type ZouPPP struct {
 	state             *uint32
 	dialSucceed       bool
 	result            *DialResult
-	assignedV4Addr    net.IP
+	AssignedV4Addr    net.IP
 	assignedIANAs     []net.IP
 	assignedIAPDs     []*net.IPNet
-	conn              *etherconn.EtherConn
+	Conn              *etherconn.EtherConn
 }
 
 // NewZouPPP creates a new ZouPPP instance, dialwg is done when dial finishes,
@@ -102,7 +102,7 @@ func NewZouPPP(econn *etherconn.EtherConn, cfg *Config,
 	if cfg.CID != "" || cfg.RID != "" {
 		taglist = append(taglist, pppoe.NewCircuitRemoteIDTag(cfg.CID, cfg.RID))
 	}
-	zou.pppoeProto = pppoe.NewPPPoE(econn,
+	zou.PPPoeProto = pppoe.NewPPPoE(econn,
 		zou.logger,
 		pppoe.WithTags(taglist))
 	if err != nil {
@@ -112,10 +112,10 @@ func NewZouPPP(econn *etherconn.EtherConn, cfg *Config,
 	zou.onceSendResult = new(sync.Once)
 	zou.result = new(DialResult)
 	zou.result.R = ResultFailure
-	zou.result.PPPoEEP = zou.pppoeProto.LocalAddr().(*pppoe.Endpoint)
+	zou.result.PPPoEEP = zou.PPPoeProto.LocalAddr().(*pppoe.Endpoint)
 	zou.createFastPathMux = new(sync.Mutex)
 	zou.state = new(uint32)
-	zou.conn = econn
+	zou.Conn = econn
 	atomic.StoreUint32(zou.state, StateInitial)
 	for _, option := range options {
 		option(zou)
@@ -169,13 +169,13 @@ func (zou *ZouPPP) Dial(ctx context.Context) {
 	zou.result.StartTime = time.Now()
 	var childctx context.Context
 	childctx, zou.cancelFunc = context.WithCancel(ctx)
-	err := zou.pppoeProto.Dial(childctx)
+	err := zou.PPPoeProto.Dial(childctx)
 	if err != nil {
 		zou.logger.Error(err.Error())
 		return
 	}
 	zou.logger.Info("pppoe open")
-	zou.pppProto = lcp.NewPPP(childctx, zou.pppoeProto, zou.pppoeProto.GetLogger())
+	zou.pppProto = lcp.NewPPP(childctx, zou.PPPoeProto, zou.PPPoeProto.GetLogger())
 
 	defPeerRule, err := lcp.NewDefaultPeerOptionRule(zou.cfg.setup.AuthProto)
 	if err != nil {
@@ -195,7 +195,7 @@ func (zou *ZouPPP) Dial(ctx context.Context) {
 
 // Close shutdown the client
 func (zou *ZouPPP) Close() {
-	zou.pppoeProto.Close()
+	zou.PPPoeProto.Close()
 	zou.cancelMe()
 }
 
@@ -294,7 +294,7 @@ func (zou *ZouPPP) lcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent) 
 			zou.ipcpProto.Up(ctx)
 		}
 		if zou.cfg.setup.IPv6 {
-			ipcp6rule := lcp.NewDefaultIP6CPRule(ctx, zou.pppoeProto.LocalAddr().(*pppoe.Endpoint).L2EP.HwAddr)
+			ipcp6rule := lcp.NewDefaultIP6CPRule(ctx, zou.PPPoeProto.LocalAddr().(*pppoe.Endpoint).L2EP.HwAddr)
 			zou.ipv6cpProto = lcp.NewLCP(ctx, lcp.ProtoIPv6CP, zou.pppProto, zou.ipcp6EvtHandler,
 				lcp.WithOwnOptionRule(ipcp6rule),
 				lcp.WithPeerOptionRule(ipcp6rule),
@@ -475,8 +475,7 @@ func (zou *ZouPPP) ipcpEvtHandler(ctx context.Context, evt lcp.LayerNotifyEvent)
 	case lcp.LCPLayerNotifyUp:
 		defer zou.ncpWG.Done()
 		if v4addrop := zou.ipcpProto.OwnRule.GetOption(uint8(lcp.OpIPAddress)); v4addrop != nil {
-			zou.assignedV4Addr = v4addrop.(*lcp.IPv4AddrOption).Addr
-			fmt.Printf("%d %s\n", zou.pppoeProto.SessionID, zou.assignedV4Addr)
+			zou.AssignedV4Addr = v4addrop.(*lcp.IPv4AddrOption).Addr
 		}
 	case lcp.LCPLayerNotifyDown, lcp.LCPLayerNotifyFinished:
 		zou.cancelMe()

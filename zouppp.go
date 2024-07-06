@@ -19,8 +19,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/schollz/progressbar/v3"
 	"log"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -35,6 +38,12 @@ import (
 	"github.com/hujun-open/zouppp/client"
 	"github.com/hujun-open/zouppp/pppoe"
 )
+
+type PPPoESessionResult struct {
+	SessionID uint16 `json:"session_id"`
+	IpAddr    net.IP `json:"ip_addr"`
+	MacAddr   string `json:"mac_addr"`
+}
 
 func main() {
 	setup := client.DefaultSetup()
@@ -99,7 +108,6 @@ func main() {
 	var clntList []*client.ZouPPP
 
 	guard := make(chan struct{}, setup.BatchSize)
-
 	for _, cfg := range cfglist {
 		econn := etherconn.NewEtherConn(cfg.Mac, relay,
 			etherconn.WithEtherTypes([]uint16{pppoe.EtherTypePPPoEDiscovery, pppoe.EtherTypePPPoESession}),
@@ -130,6 +138,16 @@ func main() {
 	}()
 	// wait for all sessions dialing finish
 	dialwg.Wait()
+	sessionResults := make([]PPPoESessionResult, len(clntList))
+	for i, zou := range clntList {
+		sessionResults[i] = PPPoESessionResult{
+			SessionID: zou.PPPoeProto.SessionID,
+			IpAddr:    zou.AssignedV4Addr,
+			MacAddr:   zou.Conn.LocalAddr().HwAddr.String(),
+		}
+	}
+	jsonDump, _ := json.Marshal(sessionResults)
+	fmt.Printf("%v", string(jsonDump))
 	setup.Logger().Sugar().Info("all sessions dialing finished")
 	// get the dailing result summary
 	summary := <-summaryCh
